@@ -58,8 +58,7 @@ async def handle_scrape(request: web.Request) -> web.Response:
     try:
         options = build_options()
         browser = Chrome(options=options)
-        await browser.start()
-        page = await browser.get_page()
+        page = await browser.start()
 
         await page.go_to(url, timeout=max(10, timeout_ms // 1000))
         if wait_after_load > 0:
