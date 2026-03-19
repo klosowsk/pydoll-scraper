@@ -47,3 +47,7 @@ docker run --rm -p 8080:8080 pydoll-scraper
 - `PORT` (default `8080`)
 - `BROWSER_BINARY` (default `/usr/bin/google-chrome`)
 - `BROWSER_START_TIMEOUT` (default `30`)
+- `PERSONA_SEED_DIR` (default `/persona-seed`)
+- `CHROME_USER_DATA_DIR` (default `/var/lib/chrome-persona`)
+- `CHROME_PROFILE_DIR` (default `Default`)
+- `PERSONA_PREFS_JSON` (optional JSON file with extra browser preferences)

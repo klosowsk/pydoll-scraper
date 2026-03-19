@@ -17,6 +17,8 @@ import asyncio
 import json
 import logging
 import os
+import shutil
+from pathlib import Path
 
 from aiohttp import web
 from pydoll.browser import Chrome
@@ -27,16 +29,81 @@ logger = logging.getLogger("pydoll-scraper")
 
 
 def build_options() -> ChromiumOptions:
+    seed_persona_files()
+
     options = ChromiumOptions()
     options.binary_location = os.environ.get("BROWSER_BINARY", "/usr/bin/google-chrome")
     options.headless = True
     options.start_timeout = int(os.environ.get("BROWSER_START_TIMEOUT", "30"))
+    options.add_argument(f"--user-data-dir={os.environ.get('CHROME_USER_DATA_DIR', '/var/lib/chrome-persona')}")
+    options.add_argument(f"--profile-directory={os.environ.get('CHROME_PROFILE_DIR', 'Default')}")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1366,768")
     options.set_accept_languages("en-US,en")
+
+    # Optional extra preferences merged on top of the seeded persona.
+    prefs_path = os.environ.get("PERSONA_PREFS_JSON", "")
+    if prefs_path:
+        try:
+            with open(prefs_path, "r", encoding="utf-8") as fh:
+                options.browser_preferences = json.load(fh)
+        except Exception as exc:
+            logger.warning("Could not load PERSONA_PREFS_JSON (%s): %s", prefs_path, exc)
+
     return options
+
+
+def seed_persona_files() -> None:
+    """Seed a persistent Chrome user-data dir from mounted persona files (one-time).
+
+    Expected seed files in PERSONA_SEED_DIR:
+      - Local State
+      - Preferences
+      - Secure Preferences
+
+    They are copied into:
+      CHROME_USER_DATA_DIR/
+      CHROME_USER_DATA_DIR/<CHROME_PROFILE_DIR>/
+    """
+
+    seed_dir = Path(os.environ.get("PERSONA_SEED_DIR", "/persona-seed"))
+    user_data_dir = Path(os.environ.get("CHROME_USER_DATA_DIR", "/var/lib/chrome-persona"))
+    profile_dir_name = os.environ.get("CHROME_PROFILE_DIR", "Default")
+    profile_dir = user_data_dir / profile_dir_name
+    marker = user_data_dir / ".persona_seeded"
+
+    user_data_dir.mkdir(parents=True, exist_ok=True)
+    profile_dir.mkdir(parents=True, exist_ok=True)
+
+    if marker.exists():
+        return
+
+    if not seed_dir.exists():
+        logger.info("No persona seed directory found at %s", seed_dir)
+        marker.write_text("not-seeded", encoding="utf-8")
+        return
+
+    copied = 0
+    local_state = seed_dir / "Local State"
+    preferences = seed_dir / "Preferences"
+    secure_preferences = seed_dir / "Secure Preferences"
+
+    if local_state.exists():
+        shutil.copy2(local_state, user_data_dir / "Local State")
+        copied += 1
+
+    if preferences.exists():
+        shutil.copy2(preferences, profile_dir / "Preferences")
+        copied += 1
+
+    if secure_preferences.exists():
+        shutil.copy2(secure_preferences, profile_dir / "Secure Preferences")
+        copied += 1
+
+    logger.info("Persona seeding complete: %d files copied from %s", copied, seed_dir)
+    marker.write_text("seeded", encoding="utf-8")
 
 
 async def handle_scrape(request: web.Request) -> web.Response:
